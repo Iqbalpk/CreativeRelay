@@ -1,9 +1,19 @@
 export const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file';
 const API='https://www.googleapis.com/drive/v3';
 export class DriveStore {
- constructor({fetcher=(...args)=>globalThis.fetch(...args),clock=Date.now}={}){this.fetcher=fetcher;this.clock=clock;this.disconnect();}
- authorize(token,expires=3600){if(!token)throw Error('Google did not return an access token.');this.token=token;this.expiry=this.clock()+Number(expires)*1000;this.folder=null;}
- disconnect(){this.token=null;this.expiry=0;this.folder=null;}
+ constructor({fetcher=(...args)=>globalThis.fetch(...args),clock=Date.now,session=globalThis.sessionStorage}={}){this.fetcher=fetcher;this.clock=clock;this.session=session;this.owner=null;this.token=null;this.expiry=0;this.folder=null;}
+ setOwner(owner){
+  if(this.owner===owner)return;
+  if(this.owner)this.disconnect();
+  this.owner=owner||null;this.token=null;this.expiry=0;this.folder=null;
+  if(!this.owner)return;
+  try{const saved=JSON.parse(this.session?.getItem('creativerelay-drive-session')||'null');
+   if(saved?.owner===this.owner&&typeof saved.token==='string'&&saved.token&&Number.isFinite(saved.expiry)&&this.clock()<saved.expiry-30000){this.token=saved.token;this.expiry=saved.expiry;}
+   else this.session?.removeItem('creativerelay-drive-session');
+  }catch{try{this.session?.removeItem('creativerelay-drive-session');}catch{}}
+ }
+ authorize(token,expires=3600){if(!token)throw Error('Google did not return an access token.');const seconds=Number(expires);if(!Number.isFinite(seconds)||seconds<=30)throw Error('Google returned an invalid token expiry.');this.token=token;this.expiry=this.clock()+seconds*1000;this.folder=null;try{if(this.owner)this.session?.setItem('creativerelay-drive-session',JSON.stringify({owner:this.owner,token:this.token,expiry:this.expiry}));}catch{}}
+ disconnect(){this.token=null;this.expiry=0;this.folder=null;try{this.session?.removeItem('creativerelay-drive-session');}catch{}}
  get connected(){return Boolean(this.token&&this.clock()<this.expiry-30000);}
  async request(url,options={}){if(!this.connected)throw Error('Reconnect Google Drive in Settings.');const response=await this.fetcher(url,{...options,headers:{...options.headers,Authorization:`Bearer ${this.token}`}});if(response.status===401){this.disconnect();throw Error('Google Drive access expired. Reconnect in Settings.');}if(!response.ok){let message='Google Drive request failed';try{message=(await response.json()).error?.message||message;}catch{}throw Error(message);}return response;}
  async json(url,options){return (await this.request(url,options)).json();}
