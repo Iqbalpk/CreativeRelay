@@ -135,3 +135,6 @@ if(cloud){cloud.auth.onAuthStateChange(async(event,session)=>{if(event==='PASSWO
 
 
 
+
+import {installFacebook} from './facebook.js';
+installFacebook({getCloud:()=>cloud,getUser:()=>user,getView:()=>view,toast});
