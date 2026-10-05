@@ -3,7 +3,7 @@ export const captionLimits={LinkedIn:3000,Instagram:2200,Facebook:10000,X:280};
 export function fitCaption(value,platform){
  const original=String(value||'').trim(),limit=captionLimits[platform];
  if(!limit||original.length<=limit)return {text:original,shortened:false};
- const suffix='\n\n[Shortened post]',budget=limit-suffix.length;
+ const suffix='',budget=limit;
  const units=original.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-Z0-9])/u).map(s=>s.trim()).filter(Boolean);
  let chosen=[],used=0;
  // Keep the opening, then complete sentences/paragraphs that fit, reserving a short closing paragraph.
