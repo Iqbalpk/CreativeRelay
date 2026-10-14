@@ -1,4 +1,4 @@
-export const captionLimits={LinkedIn:3000,Instagram:2200,Facebook:10000,X:280};
+export const captionLimits={LinkedIn:3000,Instagram:2200,Facebook:10000,Threads:500,X:280};
 // Select an excerpt from the supplied text without adding facts or changing the saved article.
 export function fitCaption(value,platform){
  const original=String(value||'').trim(),limit=captionLimits[platform];
