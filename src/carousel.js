@@ -19,13 +19,11 @@ export async function prepareSlide(file) {
 export function slideSource(slide){return 'data:image/jpeg;base64,'+slide.data;}
 export function moveSlide(slides,index,offset){const next=index+offset;if(next<0||next>=slides.length)return slides;const copy=slides.slice();[copy[index],copy[next]]=[copy[next],copy[index]];return copy;}
 export function mountCarousel({current,escape:esc,changed,toast,owner}){
- const input=document.querySelector('#media');if(!input)return;
+ const input=document.querySelector('#media');if(!input||current.mode!=='Carousel')return;
  const drop=input.closest('.drop'),container=document.createElement('div');container.className='carousel-editor';
- const format=document.createElement('label');format.innerHTML='Post format<select aria-label="Post format"><option value="single">Photo or video</option><option value="Carousel">Carousel · multiple images</option></select>';
- drop.before(format);const select=format.querySelector('select');select.value=current.postFormat||'single';
  drop.after(container);
  function refresh(){
-  const active=select.value==='Carousel';drop.hidden=active;document.querySelector('#filename').hidden=active;container.hidden=!active;
+  const active=true;drop.hidden=active;document.querySelector('#filename').hidden=active;container.hidden=!active;
   if(!active)return;
   const slides=current.carousel||[];
   container.innerHTML=`<p class="muted">Choose 2–10 image slides. Prepared as JPG, up to 1 MB each. Keep the same aspect ratio across slides; Instagram may crop to match the first slide. Slides are saved with your draft.</p><label>Add carousel images<input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Add carousel images"></label><p role="status">${slides.length} / 10 slides · reorder below</p><div class="carousel-slides">${slides.map((slide,i)=>`<article class="carousel-slide"><img src="${slideSource(slide)}" alt="Slide ${i+1}: ${esc(slide.name)}"><strong>Slide ${i+1}</strong><small>${esc(slide.name)}</small><div class="row"><button type="button" class="secondary" data-move="${i}" data-offset="-1" aria-label="Move slide ${i+1} earlier" ${i===0?'disabled':''}>←</button><button type="button" class="secondary" data-move="${i}" data-offset="1" aria-label="Move slide ${i+1} later" ${i===slides.length-1?'disabled':''}>→</button><button type="button" class="secondary" data-remove="${i}" aria-label="Remove slide ${i+1}">Remove</button></div></article>`).join('')}</div><p class="muted">Carousel publishing: Instagram, Facebook Page and LinkedIn. Threads is excluded.</p>`;
@@ -38,5 +36,5 @@ export function mountCarousel({current,escape:esc,changed,toast,owner}){
   container.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{current.carousel=current.carousel.filter((_,i)=>i!==Number(button.dataset.remove));changed();refresh();});
   const preview=document.querySelector('.preview');preview.innerHTML=slides.length?`<div class="carousel-preview">${slides.map((slide,i)=>`<figure><img src="${slideSource(slide)}" alt="Carousel slide ${i+1}"><figcaption>${i+1} / ${slides.length}</figcaption></figure>`).join('')}</div>`:'<p class="muted">Add images to preview your carousel.</p>';
  }
- select.onchange=()=>{current.postFormat=select.value;changed(true);};refresh();
+ refresh();
 }
