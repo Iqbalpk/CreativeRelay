@@ -1,3 +1,4 @@
+import {articlePageURL} from './blog-route.js';
 import {uploadKind,composerPlatforms,artworkSlot,acceptsUpload} from './upload-flow.js';
 import {mountCarousel,slideSource,instagramSlides,carouselAnalysisFile} from './carousel.js';
 import {originalGeometry} from './image-fit.js';
@@ -344,19 +345,20 @@ async function publishFullBlog(destinations,selector){if(isCarousel())return pub
 
  const title=blogFeedText(),markdown=fullArticleText(),archive=!!current.includeBlogLink;if(!title||title.length>300)throw Error('Add a blog title under 300 characters.');if(!markdown.trim()||markdown.length>100000)throw Error('Paste the complete blog into Article text (up to 100,000 characters).');
 
- const galleryURL=archive?'https://iqbalpk.github.io/CreativeRelay/blog.html?author='+id:'',postText=blogShareText(title,plainBlogArticle(markdown),galleryURL);destinations.forEach(platform=>assertBlogPostFits(postText,platform));
+ const file=await resolveLinkedInMedia();if(file&&(file.size>12*1024*1024||!['image/jpeg','image/png'].includes(file.type)))throw Error('Use a JPG or PNG blog cover up to 12 MB.');
+ const cover=archive&&file?{mimeType:file.type,data:await artworkBase64(file)}:null,requestId=archive?await publicationId('creativerelay-public-blog:',id,{title,markdown,cover}):null,articleURL=archive?articlePageURL(requestId):'',postText=blogShareText(title,plainBlogArticle(markdown),articleURL);destinations.forEach(platform=>assertBlogPostFits(postText,platform));
 
  if(archive){const reader=await fetch(new URL('blog.html',location.href),{cache:'no-store'});if(!reader.ok||!(await reader.text()).includes('id="article"'))throw Error('Deploy the blog collection page before adding its link.');}
 
  const accounts=await Promise.all(destinations.map(platform=>platform==='LinkedIn'?linkedinRequest({action:'status'}):facebookRequest({action:'status'})));if(user?.id!==id)throw Error('Your signed-in account changed.');
 
- const file=await resolveLinkedInMedia();if(file&&(file.size>12*1024*1024||!['image/jpeg','image/png'].includes(file.type)))throw Error('Use a JPG or PNG blog cover up to 12 MB.');
+
 
  const posts=destinations.map((platform,i)=>{const account=accounts[i];if(!account.connected)throw Error('Connect '+platform+' in Channels first.');if(platform==='LinkedIn'){linkedinAccount=account;linkedinAccountFor=id;return {platform,name:account.name,caption:postText,file};}const page=account.pages.find(p=>p.page_id===account.pageId);if(!page)throw Error('Select your Facebook Page.');return {platform,name:page.name,pageId:page.page_id,caption:postText,file};});
 
- if(!await reviewPublicBlog({title,markdown,url:galleryURL,posts,file}))return;if(user?.id!==id)throw Error('Your account changed. Review the article again.');const results=[];
+ if(!await reviewPublicBlog({title,markdown,url:articleURL,posts,file}))return;if(user?.id!==id)throw Error('Your account changed. Review the article again.');const results=[];
 
- if(archive){if(button)button.textContent='Adding to your blog collection…';const cover=file?{mimeType:file.type,data:await artworkBase64(file)}:null,requestId=await publicationId('creativerelay-public-blog:',id,{title,markdown,cover}),articleURL='https://iqbalpk.github.io/CreativeRelay/blog.html?id='+requestId;const article=await blogRequest({action:'publish',userId:id,requestId,title,markdown,cover});if(!article.published||article.url!==articleURL)throw Error('Article publication was not confirmed. Sharing was stopped.');current.publishedBlogURL=articleURL;results.push({platform:'Blog',published:true,url:galleryURL});}
+ if(archive){if(button)button.textContent='Adding to your blog collection…';const article=await blogRequest({action:'publish',userId:id,requestId,title,markdown,cover});if(!article.published||article.url!==articleURL)throw Error('Article publication was not confirmed. Sharing was stopped.');current.publishedBlogURL=articleURL;results.push({platform:'Blog',published:true,url:articleURL});}
 
  results.push(...posts.map(p=>({platform:p.platform,pending:true})));publicationResults(results);if(button)button.textContent='Posting the full article…';await runPublications(posts,post=>submitReviewedPublication(post,id),result=>{if(user?.id!==id)return;results[results.findIndex(p=>p.platform===result.platform)]=result;publicationResults(results);});if(user?.id===id)toast('Full-article publishing results are shown below.');
 
