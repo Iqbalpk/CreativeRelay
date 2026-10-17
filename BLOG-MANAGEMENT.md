@@ -14,13 +14,13 @@ All management requests require the existing Supabase login and a matching user 
 4. Merge/deploy the frontend through the existing GitHub Pages workflow.
 5. Reopen CreativeRelay, sign in and open **My blogs**. Check listing and edit/delete confirmation. Do not delete a user's real article merely to test deployment.
 
-Do not deploy the frontend before the backend management actions are available. The current public app remains unchanged until deployment is completed.
+Do not deploy the frontend before the backend management actions are available.
 
 ## Validation already completed locally
 
 - Six backend integration tests against a real embedded PostgreSQL engine: unauthenticated/forged-owner rejection, owner-scoped list/counts, cross-account mutation denial, delete → public 404 / collection removal → restore with same link/cover, edit with stale-version protection, and bounded search/filter requests.
 - Four DOM workflow tests: Delete requires confirmation of the named article, Delete/Restore use the same ID, editing loads existing content and closes private dialogs on navigation, and account change prevents submitting an old confirmation.
-- Existing 24 app regression tests pass.
+- 36 app and publishing backend tests pass, plus 12 local blog-management/history integration and DOM checks.
 - Production build passes both without cloud configuration and with test cloud configuration to include the complete management UI.
 
 Test harnesses and implementation backups are retained in the task workspace under `work/blog-manager-tests` and `outputs/blog-manager`. No existing production article has been deleted by the assistant during this work.
