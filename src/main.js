@@ -1,3 +1,4 @@
+import {startAuth} from './auth-startup.js';
 import {mountPublicationHistory} from './publication-history.js';
 import {mountBlogManager} from './blog-manager.js';
 import {followPending,recoverPublishResponse,readPendingInstagram,rememberPendingInstagram,forgetPendingInstagram,runCarouselQueue} from './pending-publication.js';
@@ -125,7 +126,38 @@ document.querySelector('#local').onclick=()=>{user={id:'local',email:'Local stud
 
 if(cloud){document.querySelector('#login').onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target);let {error}=await cloud.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)toast(error.message);};document.querySelector('#signup').onclick=async()=>{let f=new FormData(document.querySelector('#login'));if(!document.querySelector('#login').reportValidity())return;let {error}=await cloud.auth.signUp({email:f.get('email'),password:f.get('password'),options:{emailRedirectTo:location.href.split('#')[0]}});toast(error?error.message:'Check your email to confirm your account.');};document.querySelector('#reset').onclick=async()=>{let email=document.querySelector('[name=email]').value;if(!email)return toast('Enter your email first.');let {error}=await cloud.auth.resetPasswordForEmail(email,{redirectTo:location.href.split('#')[0]});toast(error?error.message:'Password reset email sent.');};}}
 
-async function load(){const owner=user?.id;if(!owner)return;drive.setOwner(owner);await restoreEditor();if(user?.id!==owner)return;try{if(user?.id!=='local')await drive.restore();if(drive.connected&&!media&&current.driveMediaId){try{const artwork=await drive.readAsset(current.driveMediaId);media=new File([artwork],current.mediaName||'artwork',{type:current.mediaType||artwork.type});mediaURL=URL.createObjectURL(media);}catch{toast('Your article is restored. Reconnect Drive to load its saved artwork.');}}if(drive.connected&&!thumb&&current.driveThumbId){try{thumb=await drive.readAsset(current.driveThumbId);thumbURL=URL.createObjectURL(thumb);}catch{}}if(storage==='drive'){drafts=drive.connected?await drive.listDrafts():[];}else if(storage==='local'||user.id==='local')drafts=await local('getAll');else{let {data,error}=await cloud.from('drafts').select('*').order('created_at',{ascending:false});if(error)throw error;drafts=data.map(d=>({...d.payload,id:d.id,title:d.title,created_at:d.created_at}));}if(user?.id===owner)render();}catch(e){if(user?.id===owner){toast(e.message);render();}}}
+let workspaceLoad=0,libraryLoading=false;
+async function load(){
+ const owner=user?.id;if(!owner)return;const run=++workspaceLoad;
+ drive.setOwner(owner);await restoreEditor();if(user?.id!==owner||run!==workspaceLoad)return;
+ // Restore private local text first, then show the studio without waiting for Drive.
+ libraryLoading=view==='Library';render();
+ if(view!=='Library'){void restoreDriveArtwork(owner,current);return;}
+ try{
+  let items;
+  if(storage==='drive'&&owner!=='local'){await drive.restore();items=drive.connected?await drive.listDrafts():[];}
+  else if(storage==='local'||owner==='local')items=await local('getAll');
+  else{const {data,error}=await cloud.from('drafts').select('*').order('created_at',{ascending:false});if(error)throw error;items=data.map(d=>({...d.payload,id:d.id,title:d.title,created_at:d.created_at}));}
+  if(user?.id!==owner||run!==workspaceLoad)return;drafts=items;
+ }catch(error){if(user?.id===owner&&run===workspaceLoad)toast(error.message);}
+ finally{if(user?.id===owner&&run===workspaceLoad){libraryLoading=false;if(view==='Library')library();}}
+}
+async function restoreDriveArtwork(owner,draft){
+ if(owner==='local')return;
+ try{
+  await drive.restore();if(user?.id!==owner||current!==draft||!drive.connected)return;
+  const mediaId=draft.driveMediaId,thumbId=draft.driveThumbId;
+  if(!media&&mediaId){const artwork=await drive.readAsset(mediaId);
+   if(user?.id!==owner||current!==draft||current.driveMediaId!==mediaId||media)return;
+   media=new File([artwork],draft.mediaName||'artwork',{type:draft.mediaType||artwork.type});mediaURL=URL.createObjectURL(media);
+   if(view==='Create'){capture();composer();}
+  }
+  if(!thumb&&thumbId){const cover=await drive.readAsset(thumbId);
+   if(user?.id!==owner||current!==draft||current.driveThumbId!==thumbId||thumb)return;
+   thumb=cover;thumbURL=URL.createObjectURL(thumb);if(view==='Create'){capture();composer();}
+  }
+ }catch{if(user?.id===owner&&current===draft&&view==='Create'&&(draft.driveMediaId||draft.driveThumbId))toast('Your draft is restored. Connect Drive in Settings to load its saved artwork.');}
+}
 
 let cleanupBlogManager=()=>{};
 function render(){cleanupBlogManager();cleanupBlogManager=()=>{};document.querySelector('#app').innerHTML=`<div class="layout"><aside class="sidebar"><div class="logo"><img class="brand-mark" src="./icon.svg" alt=""><span>creative<b>relay.</b></span></div><div class="workspace-label">WORKSPACE</div><nav>${['Create','Library','Blogs','Channels','Settings'].map(v=>`<button data-nav="${v}" class="${view===v?'active':''}">${navIcon(v==='Blogs'?'Library':v)}<span>${{Create:'Create post',Library:'Your library',Blogs:'My blogs',Channels:'Channels',Settings:'Settings'}[v]}</span></button>`).join('')}</nav><div class="bottom"><div class="sidebar-note"><span class="live-dot"></span> Your creative workspace<p>Make good work<br>impossible to miss.</p></div><div class="profile-account">${avatarHTML()}<small>${esc(user.email)}</small></div><button id="logout">Sign out</button></div></aside><main class="main"><header class="top"><div><div class="eyebrow"><span class="live-dot"></span> CREATIVE WORKSPACE</div><h1>${view==='Create'?'Create something worth sharing.':view==='Library'?'Your library.':view==='Blogs'?'My blogs.':view==='Channels'?'Your publishing channels.':'Your studio settings.'}</h1><span class="muted">${view==='Create'?'Bring your work, words and destinations together.':'Your creative workflow, thoughtfully organised.'}</span></div>${themeToggleHTML()}<button id="newdraft" class="secondary">New draft</button><span class="badge">${user.id==='local'?'Local studio':'Cloud account'}</span></header><div id="content"></div></main></div>`;
@@ -189,7 +221,7 @@ function download(name,text,type='text/plain'){let u=URL.createObjectURL(new Blo
 
 function exportPack(){capture();if(!current.title.trim())return toast('Add a heading first.');download(current.title.replace(/[^a-zA-Z0-9-]/g,'_')+'-post-pack.json',JSON.stringify({title:current.title,facts:current.facts,platforms:current.selected,captions:current.captions,titles:current.titles||{},keywords:current.keywords||[],markdown:md,postFormat:current.postFormat||'single',carousel:current.carousel||[],mediaFilename:media?.name||null,thumbnailFilename:thumb?.name||null},null,2),'application/json');if(md)download('article.md',md,'text/markdown');toast('Post pack downloaded. Attach your original artwork when posting.');}
 
-function library(){document.querySelector('#content').innerHTML=`<div class="notice">Storage: ${storage==='drive'?'Google Drive'+(drive.connected?' Â· connected':' Â· reconnect in Settings'):storage==='local'?'This browser':'Cloud database'}. Each account uses its own Drive. Switching storage does not move existing drafts.</div><div class="library" style="margin-top:20px">${drafts.length?drafts.map(d=>`<article class="card"><span class="eyebrow">${esc(d.mode||'Work')} / DRAFT</span><div class="library-art">${navIcon(d.mode==='Blog'?'Channels':'Create')}<span>${esc((d.title||'D').slice(0,1).toUpperCase())}</span></div><h3>${esc(d.title)}</h3><p class="muted">${esc(new Date(d.created_at).toLocaleDateString())}</p><p class="muted">${esc((d.selected||[]).join(' Â· '))}</p><button data-open="${esc(d.id)}">Open draft</button></article>`).join(''):'<div class="card empty">No drafts loaded. Connect your Drive or start a new draft.</div>'}</div><button id="refresh" class="secondary">Refresh library</button>`;document.querySelector('#refresh').onclick=load;document.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{try{let d=drafts.find(x=>x.id===b.dataset.open);revoke();current={...d,storage};md=d.markdown||'';media=thumb=null;if(storage==='drive'){if(d.driveMediaId){media=await drive.readAsset(d.driveMediaId);mediaURL=URL.createObjectURL(media);media=new File([media],d.mediaName||'artwork',{type:d.mediaType||media.type});}if(d.driveThumbId){thumb=await drive.readAsset(d.driveThumbId);thumbURL=URL.createObjectURL(thumb);} // Existing assets are references, not new uploads.
+function library(){document.querySelector('#content').innerHTML=`<div class="notice">Storage: ${storage==='drive'?'Google Drive'+(drive.connected?' Â· connected':' Â· reconnect in Settings'):storage==='local'?'This browser':'Cloud database'}. Each account uses its own Drive. Switching storage does not move existing drafts.</div><div class="library" style="margin-top:20px">${libraryLoading?'<div class="card" role="status">Loading your saved drafts…</div>':drafts.length?drafts.map(d=>`<article class="card"><span class="eyebrow">${esc(d.mode||'Work')} / DRAFT</span><div class="library-art">${navIcon(d.mode==='Blog'?'Channels':'Create')}<span>${esc((d.title||'D').slice(0,1).toUpperCase())}</span></div><h3>${esc(d.title)}</h3><p class="muted">${esc(new Date(d.created_at).toLocaleDateString())}</p><p class="muted">${esc((d.selected||[]).join(' Â· '))}</p><button data-open="${esc(d.id)}">Open draft</button></article>`).join(''):'<div class="card empty">No drafts loaded. Connect your Drive or start a new draft.</div>'}</div><button id="refresh" class="secondary">Refresh library</button>`;document.querySelector('#refresh').onclick=load;document.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{try{let d=drafts.find(x=>x.id===b.dataset.open);revoke();current={...d,storage};md=d.markdown||'';media=thumb=null;if(storage==='drive'){if(d.driveMediaId){media=await drive.readAsset(d.driveMediaId);mediaURL=URL.createObjectURL(media);media=new File([media],d.mediaName||'artwork',{type:d.mediaType||media.type});}if(d.driveThumbId){thumb=await drive.readAsset(d.driveThumbId);thumbURL=URL.createObjectURL(thumb);} // Existing assets are references, not new uploads.
 
 thumb=null;
 
@@ -304,7 +336,12 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEven
 
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 
-if(cloud){cloud.auth.onAuthStateChange(async(event,session)=>{if(event==='PASSWORD_RECOVERY'){let password=prompt('Enter a new password (at least 8 characters)');if(password?.length>=8){let {error}=await cloud.auth.updateUser({password});toast(error?error.message:'Password updated.');}}if(session){user=session.user;await load();}else if(event==='SIGNED_OUT'){restoredEditorFor=null;drive.disconnect();drive.setOwner(null);user=null;drafts=[];revoke();media=thumb=null;auth();}else if(!user)auth();});let {data}=await cloud.auth.getSession();if(data.session){user=data.session.user;await load();}else auth();}else if(sessionStorage.getItem('one-local')){user={id:'local',email:'Local studio'};load();}else auth();
+if(cloud){startAuth(cloud.auth,{
+ onSession(session,changed){user=session.user;if(changed){drafts=[];return load();}},
+ onSignedOut(event){if(event==='SIGNED_OUT'){restoredEditorFor=null;drive.disconnect();drive.setOwner(null);user=null;drafts=[];revoke();media=thumb=null;auth();}else if(!user)auth();},
+ async onRecovery(){const password=prompt('Enter a new password (at least 8 characters)');if(password?.length>=8){const {error}=await cloud.auth.updateUser({password});toast(error?error.message:'Password updated.');}},
+ onError(error){toast(error.message||'Could not restore sign-in. Check your connection.');if(!user)auth();}
+});}else if(sessionStorage.getItem('one-local')){user={id:'local',email:'Local studio'};void load();}else auth();
 
 
 
