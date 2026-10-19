@@ -1,3 +1,4 @@
+import {decodeMedia} from '../supabase/functions/instagram/media-base64.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -46,7 +47,7 @@ test('Instagram acknowledges accepted artwork before preparation completes, then
   return new Response(JSON.stringify(data),{status:200});
  };
  try{
-  new Function('Deno','createClient','publicationHistory','mapSlides','fetch',code)({env:{get:()=>secret},serve:fn=>{handler=fn;}},()=>client,publicationHistory,mapSlides,fetcher);
+  new Function('Deno','createClient','publicationHistory','mapSlides','decodeMedia','fetch',code)({env:{get:()=>secret},serve:fn=>{handler=fn;}},()=>client,publicationHistory,mapSlides,decodeMedia,fetcher);
   const body={action:'publish',userId:'owner',requestId:'11111111-1111-4111-8111-111111111111',caption:'Caption',slides:Array.from({length:10},()=>({mimeType:'image/jpeg',data:'/9j/AA=='}))};
   const request=payload=>new Request('https://example.test',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify(payload)});
   const response=await handler(request(body));assert.equal(response.status,202);assert.equal((await response.json()).pending,true);assert.equal(publishes,0);

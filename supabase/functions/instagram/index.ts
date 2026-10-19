@@ -1,3 +1,4 @@
+import {decodeMedia} from './media-base64.mjs';
 import {publicationHistory,mapSlides} from './publication-utils.mjs';
 
 
@@ -11,9 +12,9 @@ function validateSlides(body) {
 
  return body.slides.map(item=>{
 
-  if(item?.mimeType!=='image/jpeg'||typeof item.data!=='string'||item.data.length>1400000||item.data.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(item.data))throw Error('Use prepared JPG carousel images, up to 1 MB each.');
+  if(item?.mimeType!=='image/jpeg'||typeof item.data!=='string'||item.data.length>1400000||item.data.length%4)throw Error('Use prepared JPG carousel images, up to 1 MB each.');
 
-  const bytes=Uint8Array.from(atob(item.data),c=>c.charCodeAt(0));total+=bytes.length;
+  const bytes=decodeMedia(item.data,1024*1024);total+=bytes.length;
 
   if(bytes.length>1024*1024||total>10*1024*1024||bytes.length<4||bytes[0]!==255||bytes[1]!==216||bytes[2]!==255)throw Error('Invalid carousel image.');
 
@@ -47,9 +48,9 @@ function validatePost(body) {
 
   if (!['image/jpeg', 'video/mp4'].includes(mimeType)) throw Error('Attach a JPG image or MP4 video. Instagram cannot publish text alone.');
 
-  if (typeof data !== 'string' || !data.length || data.length > Math.ceil(MAX_MEDIA / 3) * 4 || data.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw Error('Publishing media must be under 12 MB.');
+  if (typeof data !== 'string' || !data.length || data.length > Math.ceil(MAX_MEDIA / 3) * 4 || data.length % 4 ) throw Error('Publishing media must be under 12 MB.');
 
-  const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+  const bytes = decodeMedia(data,MAX_MEDIA);
 
   if (bytes.length > MAX_MEDIA) throw Error('Publishing media must be under 12 MB.');
 
@@ -153,7 +154,9 @@ async function advance(db:any, connection:any, userId:string, id:string) {
 
   if (attempt.status === 'published') return {published:true,postId:attempt.post_id,url:'https://www.instagram.com/' + encodeURIComponent(connection.username) + '/'};
 
-  if (['publishing','unconfirmed'].includes(attempt.status)) throw Error('Publication is unconfirmed. Check your Instagram profile before creating another post.');
+  // Another worker owns media_publish. Wait for its result; never issue a second POST.
+  if(attempt.status==='publishing')return {pending:true,requestId:id,stage:'publishing'};
+  if(attempt.status==='unconfirmed')throw Error('Publication is unconfirmed. Check your Instagram profile before creating another post.');
 
   if (attempt.status === 'failed') throw Error('This attempt failed. Select corrected media or edit the caption before trying a new post.');
 
@@ -357,5 +360,6 @@ Deno.serve(async req => {
   } catch(e) { return reply({error:e instanceof Error?e.message:'Instagram request failed'},400); }
 
 });
+
 
 
