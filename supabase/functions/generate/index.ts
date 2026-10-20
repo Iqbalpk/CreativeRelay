@@ -1,4 +1,4 @@
-// GEMINI_API_KEY stays on the server; deploy with JWT verification enabled.
+// GEMINI_API_KEY stays on the server. Disable legacy gateway JWT verification; verify the user below.
 import {createClient} from 'npm:@supabase/supabase-js@2';
 import {validateInput,buildGeminiRequest,parseGeminiOutput} from './gemini.mjs';
 const origin=Deno.env.get('APP_ORIGIN')||'http://127.0.0.1:5173';
@@ -7,8 +7,9 @@ Deno.serve(async req=>{
 if(req.method==='OPTIONS')return new Response('ok',{headers});
 if(req.method!=='POST')return new Response(JSON.stringify({error:'POST required'}),{status:405,headers});
 try{
- const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:req.headers.get('Authorization')||''}}});
- const {data:{user},error}=await db.auth.getUser();if(error||!user)return new Response(JSON.stringify({error:'Sign in required'}),{status:401,headers});
+ const userToken=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'')||'';
+ const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:'Bearer '+userToken}}});
+ const {data:{user},error}=await db.auth.getUser(userToken);if(error||!user)return new Response(JSON.stringify({error:'Sign in required'}),{status:401,headers});
  if(Number(req.headers.get('content-length')||0)>18*1024*1024)throw Error('Analysis request too large. Use a file under 12 MB.');
  const input=validateInput(await req.json());const secret=Deno.env.get('GEMINI_API_KEY');if(!secret)throw Error('Gemini is not configured. Set GEMINI_API_KEY on the backend.');
  const {data:allowed,error:quotaError}=await db.rpc('consume_generation');if(quotaError)throw Error('Generation quota is not configured. Apply the schema.');if(!allowed)return new Response(JSON.stringify({error:'Daily generation limit reached'}),{status:429,headers});
@@ -20,3 +21,4 @@ try{
  return new Response(JSON.stringify(parseGeminiOutput(await response.json(),input.platforms)),{headers});
 }catch(e){return new Response(JSON.stringify({error:e instanceof Error?e.message:'Generation failed'}),{status:400,headers});}
 });
+

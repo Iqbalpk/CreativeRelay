@@ -1,3 +1,4 @@
+import {decodeMedia} from './media-base64.mjs';
 import {publicationHistory} from './publication-utils.mjs';
 import {createClient} from 'npm:@supabase/supabase-js@2';
 
@@ -13,7 +14,7 @@ async function seal(token:string) {
 }
 async function unseal(cipher:string) {
  const parts=cipher.split('.');if(parts.length!==2)throw Error('Invalid stored Facebook connection');
- const decode=(value:string)=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
+ const decode=(value:string)=>decodeMedia(value);
  const key=await crypto.subtle.importKey('raw',await crypto.subtle.digest('SHA-256',new TextEncoder().encode('CreativeRelay Facebook:'+setting('FACEBOOK_CLIENT_SECRET'))),{name:'AES-GCM'},false,['decrypt']);
  return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(parts[0])},key,decode(parts[1])));
 }
@@ -42,9 +43,9 @@ function validateSlides(body) {
 
  return body.slides.map(item=>{
 
-  if(item?.mimeType!=='image/jpeg'||typeof item.data!=='string'||item.data.length>1400000||item.data.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(item.data))throw Error('Use prepared JPG carousel images, up to 1 MB each.');
+  if(item?.mimeType!=='image/jpeg'||typeof item.data!=='string'||item.data.length>1400000||item.data.length%4)throw Error('Use prepared JPG carousel images, up to 1 MB each.');
 
-  const bytes=Uint8Array.from(atob(item.data),c=>c.charCodeAt(0));total+=bytes.length;
+  const bytes=decodeMedia(item.data);total+=bytes.length;
 
   if(bytes.length>1024*1024||total>10*1024*1024||bytes.length<4||bytes[0]!==255||bytes[1]!==216||bytes[2]!==255)throw Error('Invalid carousel image.');
 
@@ -70,9 +71,9 @@ function validatePost(body){
 
   if(!['image/jpeg','image/png','video/mp4'].includes(mimeType))throw Error('Facebook needs a JPG, PNG or MP4.');
 
-  if(typeof data!=='string'||!data.length||data.length>16*1024*1024||data.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(data))throw Error('Facebook media must be under 12 MB.');
+  if(typeof data!=='string'||!data.length||data.length>16*1024*1024||data.length%4)throw Error('Facebook media must be under 12 MB.');
 
-  const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));if(bytes.length>12*1024*1024)throw Error('Facebook media must be under 12 MB.');
+  const bytes=decodeMedia(data);if(bytes.length>12*1024*1024)throw Error('Facebook media must be under 12 MB.');
 
   if(mimeType==='image/jpeg'&&!(bytes[0]===255&&bytes[1]===216&&bytes[2]===255))throw Error('Invalid JPG image.');
 
@@ -275,5 +276,6 @@ Deno.serve(async req=>{
  }catch(e){return reply({error:e instanceof Error?e.message:'Facebook connection failed'},400);}
 
 });
+
 
 

@@ -24,3 +24,14 @@ test('Instagram check during another worker publishing remains pending and never
  const db={from(){return {select(){return {single:async()=>{reads++;return {data:{status:'publishing'}};}};}};}};
  const result=await advance(db,{},'owner','same-id');assert.deepEqual(result,{pending:true,requestId:'same-id',stage:'publishing'});assert.equal(reads,1);
 });
+
+test('LinkedIn and Facebook deployed validators accept maximum prepared video without full-input regex arrays',async()=>{
+ const bytes=Buffer.alloc(12*1024*1024,1);bytes.write('ftyp',4);const payload={pageId:'1398146120041698',requestId:'11111111-1111-4111-8111-111111111111',caption:'Current project',media:{mimeType:'video/mp4',data:bytes.toString('base64')}};
+ for(const name of ['dynamic-endpoint','facebook']){
+  const source=await readFile(new URL('../supabase/functions/'+name+'/index.ts',import.meta.url),'utf8');
+  const start=source.indexOf('function validateSlides'),end=source.indexOf('function postBody',start);
+  const slice=name==='dynamic-endpoint'?source.slice(start,end):source.slice(start,source.indexOf('async function',source.indexOf('function validatePost')));
+  const {code}=await esbuild.transform(slice,{loader:'ts'});const validate=new Function('decodeMedia',code+';return validatePost;')(decodeMedia);
+  assert.ok(validate(payload).media);assert.throws(()=>validate({...payload,media:{mimeType:'video/mp4',data:'!!!!'}}));
+ }
+});

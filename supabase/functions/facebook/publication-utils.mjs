@@ -18,3 +18,4 @@ export async function mapSlides(items,prepare,concurrency=3){
  if(failure)throw failure;
  return results;
 }
+
