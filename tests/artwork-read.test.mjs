@@ -10,11 +10,11 @@ test('selected bytes survive loss of access to the original picker file',async()
  const first=artworkBase64(copy);assert.equal(first,artworkBase64(copy),'publishers share one read');assert.deepEqual(Buffer.from(await first,'base64'),Buffer.alloc(700000,81));assert.equal(reads,2);
 });
 test('unreadable old attachment can recover from its private saved asset',async()=>{
- const broken=new Blob(['old']);broken.slice=()=>({arrayBuffer:async()=>{throw Error('NotReadableError');}});let downloads=0;
+ const broken=new Blob([]);broken.slice=()=>({arrayBuffer:async()=>{throw Error('NotReadableError');}});let downloads=0;
  const copy=await readableArtwork(broken,async()=>{downloads++;return new File(['saved artwork'],'saved.jpg',{type:'image/jpeg'});});assert.equal(await copy.text(),'saved artwork');assert.equal(downloads,1);
 });
 test('unrecoverable attachment fails before sending and does not cache a failed read',async()=>{
- const file=new Blob(['x']);let fail=true;file.slice=()=>({arrayBuffer:async()=>{if(fail)throw Error('gone');return new Uint8Array([120]).buffer;}});
+ const file=new Blob(['x']);let fail=true;Object.defineProperty(file,'size',{get:()=>fail?0:1});file.slice=()=>({arrayBuffer:async()=>{if(fail)throw Error('gone');return new Uint8Array([120]).buffer;}});
  await assert.rejects(artworkBase64(file),/Select the photo or video again/);fail=false;assert.equal(await artworkBase64(file),'eA==');
 });
 test('base64 chunk boundaries preserve bytes at every padding length and maximum upload size',async()=>{
@@ -23,6 +23,16 @@ test('base64 chunk boundaries preserve bytes at every padding length and maximum
 test('actual combined review stops an unreadable file before any dialog or send',async()=>{
  const main=await readFile(new URL('../src/main.js',import.meta.url),'utf8');const start=main.indexOf('async function reviewAllPublications('),source=main.slice(start,main.indexOf('\n',start));let dialogs=0;
  const state={artworkBase64,document:{createElement(){dialogs++;throw Error('Should not open review');}},URL};vm.createContext(state);vm.runInContext(source,state);
- const broken=new Blob(['x']);broken.slice=()=>({arrayBuffer:async()=>{throw Error('Lost Photos access');}});
+ const broken=new Blob([]);broken.slice=()=>({arrayBuffer:async()=>{throw Error('Lost Photos access');}});
  await assert.rejects(state.reviewAllPublications([{platform:'LinkedIn',file:broken},{platform:'Facebook',file:broken}]),/Select the photo or video again/);assert.equal(dialogs,0);
+});
+
+test('Photos range-read failure falls back to whole-file bytes',async()=>{
+ const file=new File(['whole video'],'iphone.mov',{type:'video/quicktime'});file.slice=()=>({arrayBuffer:async()=>{throw Error('NotReadableError');}});
+ const copy=await retainArtwork(file);assert.equal(await copy.text(),'whole video');
+});
+test('native FileReader fallback handles a Blob arrayBuffer rejection',async()=>{
+ const previous=globalThis.FileReader;let nativeReads=0;
+ globalThis.FileReader=class{readAsArrayBuffer(blob){nativeReads++;Blob.prototype.arrayBuffer.call(blob).then(bytes=>{this.result=bytes;this.onload();});}};
+ try{const file=new Blob(['native read']),slice=file.slice.bind(file);file.slice=(...args)=>{const part=slice(...args);part.arrayBuffer=async()=>{throw Error('NotReadableError');};return part;};assert.equal(await (await retainArtwork(file)).text(),'native read');assert.equal(nativeReads,1);}finally{if(previous)globalThis.FileReader=previous;else delete globalThis.FileReader;}
 });
