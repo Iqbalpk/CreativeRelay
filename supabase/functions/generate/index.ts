@@ -1,4 +1,5 @@
 // GEMINI_API_KEY stays on the server. Disable legacy gateway JWT verification; verify the user below.
+import {requestGemini,busyError} from './provider-request.mjs';
 import {createClient} from 'npm:@supabase/supabase-js@2';
 import {validateInput,buildGeminiRequest,parseGeminiOutput} from './gemini.mjs';
 const origin=Deno.env.get('APP_ORIGIN')||'http://127.0.0.1:5173';
@@ -14,11 +15,11 @@ try{
  const input=validateInput(await req.json());const secret=Deno.env.get('GEMINI_API_KEY');if(!secret)throw Error('Gemini is not configured. Set GEMINI_API_KEY on the backend.');
  const {data:allowed,error:quotaError}=await db.rpc('consume_generation');if(quotaError)throw Error('Generation quota is not configured. Apply the schema.');if(!allowed)return new Response(JSON.stringify({error:'Daily generation limit reached'}),{status:429,headers});
  const model=Deno.env.get('GEMINI_MODEL')||'gemini-3.5-flash-lite';if(!/^[a-zA-Z0-9._-]+$/.test(model))throw Error('Invalid Gemini model configuration');
- let response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'x-goog-api-key':secret,'Content-Type':'application/json'},body:JSON.stringify(buildGeminiRequest(input)),signal:AbortSignal.timeout(60000)});
- // Retry a temporary provider overload once; do not retry quota/key/input errors.
- if(response.status===503){await response.body?.cancel();await new Promise(resolve=>setTimeout(resolve,1500));response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'x-goog-api-key':secret,'Content-Type':'application/json'},body:JSON.stringify(buildGeminiRequest(input)),signal:AbortSignal.timeout(60000)});}
+ const response=await requestGemini(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'x-goog-api-key':secret,'Content-Type':'application/json'},body:JSON.stringify(buildGeminiRequest(input))});
+ if(response.status===503){await response.body?.cancel();throw busyError();}
  if(!response.ok){let detail;try{detail=await response.json();}catch{}const reason=String(detail?.error?.message||'No details returned').split(secret).join('[redacted]').replace(/AIza[A-Za-z0-9_-]+/g,'[redacted]').slice(0,700);throw Error(`Gemini ${response.status} (${model}): ${reason}`);}
  return new Response(JSON.stringify(parseGeminiOutput(await response.json(),input.platforms)),{headers});
-}catch(e){return new Response(JSON.stringify({error:e instanceof Error?e.message:'Generation failed'}),{status:400,headers});}
+}catch(e){const status=e instanceof Error&&'status' in e&&e.status===503?503:400;return new Response(JSON.stringify({error:e instanceof Error?e.message:'Generation failed'}),{status,headers:status===503?{...headers,'Retry-After':'20'}:headers});}
 });
+
 
